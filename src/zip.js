@@ -16,12 +16,20 @@ class Zipper {
 
   }
 
+  /*
+    Internal functions.
+  */
+
+  /**
+  * Adds an entry to the zip archive.
+  * Returns: Number of files in the zip archive, as a result of this call.
+  */
   _addEntry(filename, data, isFolder) {
 
     // Filename must be a string.
 
-    if (!filename || typeof filename !== 'string') {
-      console.warn(`Zipper (${this._cd.length}): filename is required. Skipping entry.`);
+    if (typeof filename !== 'string') {
+      console.warn(`Zipper (${this._cd.length}): Filename must be a string. Skipping.`);
       return this._cd.length;
     }
 
@@ -36,7 +44,7 @@ class Zipper {
     // Check if theres anything left after trimming all the '/' characters.
 
     if (filename.length === 0) {
-      console.warn(`Zipper (${this._cd.length}): filename length of ${filename.length} exceeds 255 characters. Skipping entry.`);
+      console.warn(`Zipper (${this._cd.length}): Filename is required. Skipping.`);
       return this._cd.length;
     }
 
@@ -49,7 +57,14 @@ class Zipper {
     // Make sure 'filename' doesn't exceed character limit.
 
     if (filename.length > 0xFF) {
-      console.warn(`Zipper (${this._cd.length}): filename length of ${filename.length} exceeds 255 characters. Skipping.`);
+      console.warn(`Zipper (${this._cd.length}): Filename length of ${filename.length} exceeds 255 characters. Skipping.`);
+      return this._cd.length;
+    }
+
+    // Check if 'filename' is already in the archive.
+
+    if (this.getNames().includes(filename)) {
+      console.warn(`Zipper (${this._cd.length}): Archive already contains entry named "${filename}". Skipping.`);
       return this._cd.length;
     }
 
@@ -65,15 +80,17 @@ class Zipper {
       data = new Uint8Array(data);
     } else if (Array.isArray(data)) {
       data = new Uint8Array(data);
+    } else if (!data) {
+      data = new Uint8Array();
     } else {
-      console.warn(`Zipper (${this._cd.length}): File data must be one of the following: String, ArrayBuffer, Uint8Array, Array. Skipping.`);
+      console.warn(`Zipper (${this._cd.length}): File data must be one of the following: [String, ArrayBuffer, Uint8Array, Array]. Skipping.`);
       return this._cd.length;
     }
 
     // Make sure data doesn't exceed maximum size.
 
     if (data.length > 0xFFFFFFFF) {
-      console.log(`Zipper: file "${this._cd.length}" exceeds maximum size of 4294967295 bytes. Skipping.`);
+      console.log(`Zipper (${this._cd.length}): File exceeds maximum size of 4294967295 bytes. Skipping.`);
       return this._cd.length;
     }
 
@@ -116,9 +133,6 @@ class Zipper {
       ...extraFieldBytes,         // N - Extra OS properties, such as more accurate timestamp (?).
     ]);
 
-    this._parts.push(localHeader);
-    this._parts.push(data);
-
     /*
       --------------------
       Central directory header.
@@ -154,6 +168,10 @@ class Zipper {
       ...fileCommentBytes,        // N - Comment bytes.
     ]);
 
+    // Store entry parts.
+
+    this._parts.push(localHeader);
+    this._parts.push(data);
     this._cd.push(cdHeader);
 
     // Return the number of total files so far.
@@ -164,7 +182,7 @@ class Zipper {
   _getEOCD(comment) {
 
     // Generates the "End Of Central Directory" for the end of the zip file.
-    // This is run whenever 'toBlob()' is called (or similar).
+    // This is run whenever the zip archive is finalised.
 
     if (!comment) {
       comment = '';
@@ -197,6 +215,10 @@ class Zipper {
     ]);
   }
 
+  /*
+    API functions.
+  */
+
   addFolder(path) {
 
     // Folders are optional, as most unzippers will create folders where folder paths exist.
@@ -205,49 +227,39 @@ class Zipper {
     // 2. "External file properties" value is different.
 
     return this._addEntry(path, null, true);
-
   }
 
   addFile(path, data) {
 
     return this._addEntry(path, data, false);
-
   }
 
-  getEntries() {
+  count() {
+    return this._cd.length;
+  }
 
-    // Returns list of current entries by decoding contents in 'this._cd'.
+  pop() {
+
+    // Removes last entry from the archive.
+    // Not sure why this would be useful.
+
+    this._cd.pop();
+    this._parts.pop();
+    this._parts.pop();
+    
+    return this._cd.length;
+  }
+
+  getNames() {
+
+    // Returns list of current entry names by decoding contents in 'this._cd'.
 
     return this._cd.map((bytes, i) => {
 
-      const result = {};
-
-      // Get time modified.
-
-      const time = Zipper.bytesToTime(bytes.subarray(12, 14));
-      const date = Zipper.bytesToDate(bytes.subarray(14, 16));
-      result.lastModified = new Date(date.getTime() + time.getTime());
-
-      // Get checksum in Hex form.
-
-      result.checksum = Array.from(bytes.subarray(16, 20), b => ('00' + b.toString(16)).slice(-2)).reverse().join('');
-
-      // Get filename.
-
       const filenameLength = Zipper.bytesToNumber(bytes.subarray(28, 30));
-      result.filename = Zipper.bytesToString(bytes.subarray(46, 46 + filenameLength));
+      const filename = Zipper.bytesToString(bytes.subarray(46, 46 + filenameLength));
 
-      // Get extra field.
-
-      const extraFieldLength = Zipper.bytesToNumber(bytes.subarray(30, 32));
-      result.extraField = Zipper.bytesToString(bytes.subarray(46 + filenameLength, 46 + filenameLength + extraFieldLength));
-
-      // Get comments.
-
-      const commentLength = Zipper.bytesToNumber(bytes.subarray(32, 34));
-      result.comment = Zipper.bytesToString(bytes.subarray(46 + filenameLength + extraFieldLength, 46 + filenameLength + extraFieldLength + commentLength));
-
-      return result;
+      return filename;
 
     });
   }
@@ -256,8 +268,7 @@ class Zipper {
 
     // Get array of all parts.
 
-    const eOCD = this._getEOCD(comment);
-    const parts = this._parts.concat(this._cd, [eOCD]);
+    const parts = this._parts.concat(this._cd, [this._getEOCD(comment)]);
 
     // Iterate through parts and add them to new Uint8Array.
 
@@ -274,12 +285,9 @@ class Zipper {
   }
 
   toBlob(comment) {
-
-    const eOCD = this._getEOCD(comment);
-    const parts = this._parts.concat(this._cd, [eOCD]);
-
-    return new Blob(parts, { type: 'application/zip' });
+    return new Blob(this._parts.concat(this._cd, [this._getEOCD(comment)]), { type: 'application/zip' });
   }
+  
 }
 
 /*

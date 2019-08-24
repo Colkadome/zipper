@@ -1,0 +1,28 @@
+{
+  "name": "zipper",
+  "version": "1.0.0",
+  "description": "Zips files in the browser",
+  "main": "index.js",
+  "dependencies": {},
+  "devDependencies": {
+    "uglify-js": "^3.6.0"
+  },
+  "scripts": {
+    "build": "uglifyjs --compress --mangle --output zip.min.js zip.js",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Colkadome/zipper.git"
+  },
+  "keywords": [
+    "zip",
+    "browser"
+  ],
+  "author": "Joseph Dunne",
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/Colkadome/zipper/issues"
+  },
+  "homepage": "https://github.com/Colkadome/zipper#readme"
+}
